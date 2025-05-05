@@ -44,4 +44,29 @@
   .back-btn:hover {
     background: #005dc1;
   }
+
+  .summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+
+  .logout-btn {
+    background-color: #f56565;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .logout-btn:hover {
+    background-color: #e53e3e;
+  }
   

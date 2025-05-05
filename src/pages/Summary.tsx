@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './Summary.css';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 
 const Summary = () => {
   const location = useLocation();
@@ -22,6 +24,11 @@ const Summary = () => {
     }
   }, [summary, original, navigate, location.state]);
 
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    navigate('/');
+  };
+
   if (!summary || !original) {
     return (
       <div className="summary-container">
@@ -36,7 +43,12 @@ const Summary = () => {
 
   return (
     <div className="summary-container">
-      <h1>🧠 Article Summary</h1>
+      <div className="summary-header">
+        <h1>🧠 Article Summary</h1>
+        <button className="logout-btn" onClick={handleLogout}>
+          <FontAwesomeIcon icon={faSignOutAlt} /> Logout
+        </button>
+      </div>
 
       <div className="summary-section">
         <h3>✨ Summary</h3>

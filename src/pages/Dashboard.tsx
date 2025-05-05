@@ -4,6 +4,7 @@ import {
   faQuestionCircle,
   faChartLine,
   faLightbulb,
+  faSignOutAlt,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
@@ -176,6 +177,14 @@ const Dashboard = () => {
     }
   };
 
+  const handleLogout = () => {
+    // Clear user data from localStorage
+    localStorage.removeItem('user');
+    
+    // Redirect to login page
+    navigate('/');
+  };
+
   return (
     <div className="dashboard-container">
       {/* Header */}
@@ -195,9 +204,14 @@ const Dashboard = () => {
             </div>
           </div>
 
-          <button className="upload-article-btn" onClick={() => setShowModal(true)}>
-            + Add Article
-          </button>
+          <div className="dashboard-actions">
+            <button className="upload-article-btn" onClick={() => setShowModal(true)}>
+              + Add Article
+            </button>
+            <button className="logout-btn" onClick={handleLogout}>
+              <FontAwesomeIcon icon={faSignOutAlt} /> Logout
+            </button>
+          </div>
         </div>
       </div>
 

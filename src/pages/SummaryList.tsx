@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './SummaryList.css';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 
 interface SummaryItem {
   id: number;
@@ -13,6 +15,11 @@ const SummaryList = () => {
   const [summaries, setSummaries] = useState<SummaryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    navigate('/');
+  };
 
   useEffect(() => {
     const fetchSummaries = async () => {
@@ -59,11 +66,17 @@ const SummaryList = () => {
 
   return (
     <div className="summary-list-container">
-      <h1>Your Summarized Articles</h1>
-      
-      <button className="back-btn" onClick={() => navigate('/dashboard')}>
-        ⬅ Back to Dashboard
-      </button>
+      <div className="summary-list-header">
+        <h1>Your Summarized Articles</h1>
+        <div className="summary-list-actions">
+          <button className="back-btn" onClick={() => navigate('/dashboard')}>
+            ⬅ Back to Dashboard
+          </button>
+          <button className="logout-btn" onClick={handleLogout}>
+            <FontAwesomeIcon icon={faSignOutAlt} /> Logout
+          </button>
+        </div>
+      </div>
       
       {loading ? (
         <div className="loading">Loading your summaries...</div>
