@@ -204,3 +204,27 @@
   border: none;
   cursor: pointer;
 }
+
+.dashboard-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.logout-btn {
+  background-color: #f56565;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logout-btn:hover {
+  background-color: #e53e3e;
+}
