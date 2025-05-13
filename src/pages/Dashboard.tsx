@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  faBookOpen,
-  faQuestionCircle,
-  faChartLine,
+  faFileAlt,
+  faNoteSticky,
+  faClock,
   faLightbulb,
   faSignOutAlt,
 } from '@fortawesome/free-solid-svg-icons';
@@ -38,7 +38,13 @@ const FeatureItem = ({ feature, onClick }: FeatureItemProps) => (
     <h4 className="feature-title">{feature.title}</h4>
     <p className="feature-desc">{feature.desc}</p>
     {feature.value !== undefined && (
-      <div className="feature-value">{feature.value}</div>
+      <div className={`feature-value ${feature.title === "Time Spent Reading" ? 'time-value' : ''}`}>
+        {feature.title === "Time Spent Reading" && feature.value === "No time tracked yet" ? (
+          <span className="no-time-message">Start reading to track time</span>
+        ) : (
+          feature.value
+        )}
+      </div>
     )}
   </div>
 );
@@ -50,26 +56,24 @@ const Dashboard = () => {
   const [randomSuggestion, setRandomSuggestion] = useState<ArticleSuggestion | null>(null);
   const [summaryCount, setSummaryCount] = useState(0);
   const navigate = useNavigate();
-
-  // Define features with dynamic count for articles summarized
   const features: Feature[] = [
     {
-      icon: faBookOpen,
+      icon: faFileAlt,
       title: "Articles Summarised",
       desc: "Track the number of articles you've read and summarized using ReadWise.",
       value: summaryCount,
     },
     {
-      icon: faQuestionCircle,
-      title: "Quizzes Taken",
-      desc: "Review your quiz activity and test your understanding over time.",
+      icon: faNoteSticky,
+      title: "Notes Created",
+      desc: "Capture takeaways, reflections, or ideas sparked by your reading. Convert summaries into personal knowledge.",
       value: 0,
     },
     {
-      icon: faChartLine,
-      title: "Weekly Streak",
-      desc: "Maintain a consistent habit with our daily summaries and get rewarded.",
-      value: 0,
+      icon: faClock,
+      title: "Time Spent Reading",
+      desc: "See how much focused time you've invested in learning. Build a consistent reading habit at your own pace.",
+      value: "No time tracked yet",
     },
     {
       icon: faLightbulb,
@@ -77,6 +81,7 @@ const Dashboard = () => {
       desc: "Here's something new to read today! Click to begin your journey of learning.",
     },
   ];
+  
 
   useEffect(() => {
     const userJson = localStorage.getItem('user');
@@ -139,22 +144,41 @@ const Dashboard = () => {
       // Show loading state
       setShowModal(true);
       
-      const res = await fetch('/api/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          content: input,
-          user_email: userEmail
-        }),
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error('Server error:', res.status, errorText);
-        throw new Error(`Server responded with ${res.status}: ${errorText}`);
+      // Try different approaches to connect to the backend
+      let response;
+      try {
+        // First try with relative URL (relies on proxy)
+        response = await fetch('/api/summarize/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            content: input,
+            user_email: userEmail
+          }),
+        });
+      } catch (e) {
+        console.log('Relative URL failed, trying absolute URL:', e);
+        // If that fails, try with absolute URL
+        response = await fetch('http://localhost:8000/api/summarize/', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({ 
+            content: input,
+            user_email: userEmail
+          }),
+        });
       }
 
-      const data = await res.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error:', response.status, errorText);
+        throw new Error(`Server responded with ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
       console.log('Summarization successful:', data);
       
       // Close modal and clear input
@@ -164,7 +188,7 @@ const Dashboard = () => {
       // Increment summary count locally
       setSummaryCount(prevCount => prevCount + 1);
 
-      // Navigate to summary display page
+      // Navigate to summary display page with the data
       navigate('/summary', {
         state: {
           summary: data.summary,
@@ -173,7 +197,9 @@ const Dashboard = () => {
       });
     } catch (err) {
       console.error('Error submitting:', err);
+      // Show more detailed error and close modal
       alert(`❌ Failed to summarize: ${err}`);
+      setShowModal(false);
     }
   };
 

@@ -41,5 +41,5 @@ app.include_router(dashboard_router, prefix="/api/dashboard")
 app.include_router(save_summary.router, prefix="/api")  # This already has /save-summary in the router
 
 @app.get("/api/health")
-def health_check():
-    return {"status": "ok"}
+async def health_check():
+    return {"status": "ok", "message": "API is running"}

@@ -2,7 +2,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
-import sqlite3
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Get database URL from environment variable or use SQLite as fallback
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./summarizer.db")
@@ -10,9 +13,10 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./summarizer.db")
 # Create SQLAlchemy engine
 try:
     engine = create_engine(DATABASE_URL)
+    logger.info(f"Connected to database: {DATABASE_URL}")
 except Exception as e:
-    print(f"Error connecting to PostgreSQL: {e}")
-    print("Falling back to SQLite database")
+    logger.error(f"Error connecting to database: {e}")
+    logger.info("Falling back to SQLite database")
     DATABASE_URL = "sqlite:///./summarizer.db"
     engine = create_engine(DATABASE_URL)
 

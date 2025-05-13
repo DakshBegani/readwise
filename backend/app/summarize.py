@@ -7,26 +7,127 @@ from app.models import Summary as DBSummary
 import logging
 import re
 import nltk
-from nltk.tokenize import sent_tokenize
-from nltk.corpus import stopwords
-from nltk.cluster.util import cosine_distance
-import numpy as np
-from collections import Counter
-from typing import List, Dict, Tuple, Optional
-import networkx as nx
+import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Ensure NLTK resources are downloaded
+# Skip downloading and just use the data that should already be downloaded
 try:
-    nltk.download('punkt', quiet=True)
-    nltk.download('stopwords', quiet=True)
+    from nltk.tokenize import sent_tokenize
+    from nltk.corpus import stopwords
+    STOP_WORDS = set(stopwords.words('english'))
+    logger.info("NLTK resources loaded successfully")
 except Exception as e:
-    logger.warning(f"NLTK download error (non-critical): {e}")
+    logger.warning(f"NLTK import error: {e}")
+    # Fallback to empty stopwords if import fails
+    STOP_WORDS = set()
+    # Define a simple sentence tokenizer as fallback
+    def sent_tokenize(text):
+        return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+    logger.warning("Using fallback tokenizer and empty stopwords")
 
-# Initialize stopwords
-STOP_WORDS = set(stopwords.words('english'))
+# Import remaining modules
+from collections import Counter
+from typing import List, Dict, Tuple, Optional
+import numpy as np
+try:
+    import networkx as nx
+except ImportError:
+    logger.warning("NetworkX not available, will use simpler summarization")
+    nx = None
+
+# Create a simple fallback summarizer
+def simple_summarize(text, num_sentences=3):
+    """Simple summarization by returning the first few sentences"""
+    sentences = sent_tokenize(text)
+    return ' '.join(sentences[:num_sentences])
+
+# Create a more advanced summarizer
+def extract_summarize(text, num_sentences=3):
+    """
+    Extractive summarization by finding the most important sentences
+    based on word frequency analysis
+    """
+    try:
+        # Clean and tokenize the text
+        clean_text = re.sub(r'\s+', ' ', text).strip()
+        sentences = sent_tokenize(clean_text)
+        
+        # If text is too short, just return it
+        if len(sentences) <= num_sentences:
+            return ' '.join(sentences)
+        
+        # Tokenize words and remove stopwords
+        words = [word.lower() for sentence in sentences 
+                for word in re.findall(r'\w+', sentence) 
+                if word.lower() not in STOP_WORDS and len(word) > 2]
+        
+        # Count word frequencies
+        word_freq = Counter(words)
+        
+        # Score sentences based on word frequencies
+        sentence_scores = []
+        for sentence in sentences:
+            score = 0
+            for word in re.findall(r'\w+', sentence.lower()):
+                if word in word_freq:
+                    score += word_freq[word]
+            # Normalize by sentence length to avoid bias towards longer sentences
+            sentence_scores.append(score / (len(re.findall(r'\w+', sentence)) + 1))
+        
+        # Get indices of top sentences
+        top_indices = np.argsort(sentence_scores)[-num_sentences:]
+        # Sort indices to maintain original order
+        top_indices = sorted(top_indices)
+        
+        # Construct summary from top sentences
+        summary = ' '.join([sentences[i] for i in top_indices])
+        return summary
+    
+    except Exception as e:
+        logger.error(f"Advanced summarization failed: {e}")
+        # Fall back to simple summarization
+        return simple_summarize(text, num_sentences)
+
+# Add these imports at the top with other imports
+from transformers import pipeline
+
+# Add this with other try/except blocks
+try:
+    from transformers import pipeline
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn", max_length=150, min_length=40)
+    TRANSFORMERS_AVAILABLE = True
+    logger.info("Hugging Face transformers loaded successfully")
+except Exception as e:
+    logger.warning(f"Transformers import error: {e}")
+    TRANSFORMERS_AVAILABLE = False
+    logger.warning("Using fallback summarization methods")
+
+def huggingface_summarize(text):
+    """
+    Use Hugging Face's pre-trained summarization model
+    """
+    if not TRANSFORMERS_AVAILABLE:
+        logger.warning("Transformers not available, falling back to extractive summarization")
+        return extract_summarize(text)
+    
+    try:
+        # Truncate very long texts to avoid model limits
+        if len(text) > 1024:
+            logger.info(f"Truncating long text from {len(text)} chars to 1024")
+            text = text[:1024]
+        
+        # Generate summary
+        result = summarizer(text, max_length=150, min_length=40, do_sample=False)
+        summary = result[0]['summary_text']
+        logger.info(f"Hugging Face generated summary: {summary[:100]}...")
+        return summary
+            
+    except Exception as e:
+        logger.error(f"Hugging Face summarization failed: {e}")
+        # Fall back to our extractive summarization
+        return extract_summarize(text)
 
 # Router setup
 router = APIRouter(prefix="/api/summarize", tags=["summarize"])
@@ -39,189 +140,67 @@ class SummarizeRequest(BaseModel):
 class SummarizeResponse(BaseModel):
     summary: str
 
-def preprocess_text(text: str) -> str:
-    """Clean and normalize text."""
-    # Remove extra whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
-    # Remove special characters (keeping punctuation)
-    text = re.sub(r'[^\w\s.,!?;:\'"-]', '', text)
-    return text
-
-def sentence_similarity(sent1: str, sent2: str) -> float:
-    """Calculate similarity between two sentences using word vectors."""
-    # Convert to lowercase and tokenize
-    words1 = [w.lower() for w in re.findall(r'\w+', sent1) if w.lower() not in STOP_WORDS]
-    words2 = [w.lower() for w in re.findall(r'\w+', sent2) if w.lower() not in STOP_WORDS]
-    
-    # If either sentence has no meaningful words, return 0
-    if not words1 or not words2:
-        return 0.0
-    
-    # Create word frequency vectors
-    all_words = list(set(words1 + words2))
-    vector1 = [1 if word in words1 else 0 for word in all_words]
-    vector2 = [1 if word in words2 else 0 for word in all_words]
-    
-    # Calculate cosine similarity
-    return 1 - cosine_distance(vector1, vector2)
-
-def build_similarity_matrix(sentences: List[str]) -> np.ndarray:
-    """Build a similarity matrix for all sentences."""
-    # Create an empty similarity matrix
-    similarity_matrix = np.zeros((len(sentences), len(sentences)))
-    
-    # Fill the similarity matrix
-    for i in range(len(sentences)):
-        for j in range(len(sentences)):
-            if i == j:
-                continue
-            similarity_matrix[i][j] = sentence_similarity(sentences[i], sentences[j])
-            
-    return similarity_matrix
-
-def textrank_summarize(text: str, num_sentences: int = 5) -> str:
-    """Generate summary using TextRank algorithm."""
-    # Preprocess and split into sentences
-    clean_text = preprocess_text(text)
-    sentences = sent_tokenize(clean_text)
-    
-    # If text is short, return it as is
-    if len(sentences) <= num_sentences:
-        return clean_text
-    
-    # Build similarity matrix
-    similarity_matrix = build_similarity_matrix(sentences)
-    
-    # Create graph and apply PageRank
-    nx_graph = nx.from_numpy_array(similarity_matrix)
-    scores = nx.pagerank(nx_graph)
-    
-    # Sort sentences by score and select top ones
-    ranked_sentences = sorted(((scores[i], i) for i in range(len(sentences))), reverse=True)
-    top_sentence_indices = [ranked_sentences[i][1] for i in range(min(num_sentences, len(ranked_sentences)))]
-    top_sentence_indices.sort()  # Sort by original position
-    
-    # Combine sentences
-    summary = ' '.join([sentences[i] for i in top_sentence_indices])
-    return summary
-
-def frequency_summarize(text: str, num_sentences: int = 5) -> str:
-    """Generate summary using word frequency approach."""
-    # Preprocess and split into sentences
-    clean_text = preprocess_text(text)
-    sentences = sent_tokenize(clean_text)
-    
-    # If text is short, return it as is
-    if len(sentences) <= num_sentences:
-        return clean_text
-    
-    # Calculate word frequencies
-    word_frequencies = Counter()
-    for sentence in sentences:
-        for word in re.findall(r'\w+', sentence.lower()):
-            if word not in STOP_WORDS:
-                word_frequencies[word] += 1
-    
-    # If no meaningful words found, return first few sentences
-    if not word_frequencies:
-        return ' '.join(sentences[:num_sentences])
-    
-    # Normalize frequencies
-    max_frequency = max(word_frequencies.values())
-    for word in word_frequencies:
-        word_frequencies[word] = word_frequencies[word] / max_frequency
-    
-    # Score sentences
-    sentence_scores = {}
-    for i, sentence in enumerate(sentences):
-        for word in re.findall(r'\w+', sentence.lower()):
-            if word in word_frequencies:
-                if i not in sentence_scores:
-                    sentence_scores[i] = 0
-                sentence_scores[i] += word_frequencies[word]
-    
-    # Get top sentences
-    top_sentence_indices = sorted(sentence_scores, key=sentence_scores.get, reverse=True)[:num_sentences]
-    top_sentence_indices.sort()  # Sort by original position
-    
-    # Combine sentences
-    summary = ' '.join([sentences[i] for i in top_sentence_indices])
-    return summary
-
-def hybrid_summarize(text: str) -> str:
-    """Generate summary using a hybrid approach."""
-    # Determine appropriate summary length based on input length
-    word_count = len(text.split())
-    if word_count < 100:
-        num_sentences = 2
-    elif word_count < 500:
-        num_sentences = 3
-    elif word_count < 1000:
-        num_sentences = 5
-    else:
-        num_sentences = 7
-    
-    # Try TextRank first (graph-based)
-    try:
-        summary = textrank_summarize(text, num_sentences)
-        # If summary is too short, fall back to frequency-based
-        if len(summary.split()) < 10 and word_count > 50:
-            logger.info("TextRank summary too short, using frequency-based approach")
-            summary = frequency_summarize(text, num_sentences)
-    except Exception as e:
-        logger.warning(f"TextRank summarization failed: {e}, using frequency-based approach")
-        summary = frequency_summarize(text, num_sentences)
-    
-    # If still too short, use first few sentences
-    if len(summary.split()) < 10 and word_count > 50:
-        sentences = sent_tokenize(preprocess_text(text))
-        summary = ' '.join(sentences[:3])
-        logger.info("Generated summary too short, using first few sentences")
-    
-    return summary
-
 @router.post("/", response_model=SummarizeResponse)
 def summarize_article(
     req: SummarizeRequest,
     db: Session = Depends(get_db)
 ):
-    text = req.content.strip()
-    if not text:
-        raise HTTPException(status_code=422, detail="No content provided")
-
-    email = req.user_email or "anonymous"
-    logger.info(f"Summarizing ({len(text)} chars) for user: {email}")
-
     try:
-        # For debugging
-        logger.info(f"Input text: {text[:100]}...")
+        text = req.content.strip()
+        if not text:
+            raise HTTPException(status_code=422, detail="No content provided")
+
+        email = req.user_email or "anonymous"
+        logger.info(f"Summarizing ({len(text)} chars) for user: {email}")
+
+        # Try Hugging Face summarization first
+        try:
+            summary = huggingface_summarize(text)
+            logger.info("Used Hugging Face summarization")
+        except Exception as e:
+            logger.error(f"Hugging Face summarization failed: {e}")
+            # Fall back to extractive summarization
+            try:
+                summary = extract_summarize(text)
+                logger.info("Used extractive summarization")
+            except Exception as e2:
+                logger.error(f"Extractive summarization failed: {e2}")
+                # Last resort: simple summarization
+                summary = simple_summarize(text)
+                logger.info("Used simple summarization")
         
-        # Generate summary using our hybrid approach
-        summary = hybrid_summarize(text)
         logger.info(f"Generated summary: {summary[:100]}...")
         
-        # Persist to database
+        # Save to database
         try:
             record = DBSummary(
                 user_email=email,
                 original_text=text,
                 summary_text=summary,
-                title="Summarized Article"  # Add a default title
+                title="Summarized Article"
             )
             db.add(record)
             db.commit()
-            db.refresh(record)
-            logger.info(f"Saved summary to database with ID: {record.id}")
+            logger.info("Summary saved to database")
         except Exception as e:
-            logger.error(f"DB save failed: {e}")
+            logger.error(f"Database error: {e}")
             db.rollback()
-            # Continue even if DB save fails
+        
+        return SummarizeResponse(summary=summary)
+    
     except Exception as e:
-        logger.error(f"Summarization failed: {e}")
-        # Fallback to simple approach if everything else fails
-        sentences = sent_tokenize(text)
-        summary = ' '.join(sentences[:3])
-        logger.info(f"Used fallback summarization: {summary[:100]}...")
+        logger.error(f"Summarization error: {str(e)}")
+        return SummarizeResponse(
+            summary="I couldn't generate a proper summary due to a technical issue. "
+                   "Please try again with a different text or contact support if the issue persists."
+        )
 
-    # Return the summary regardless of whether it was saved to DB
-    return SummarizeResponse(summary=summary)
+# Add a health check endpoint
+@router.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+@router.get("/test")
+def test_endpoint():
+    """Simple test endpoint to verify the router is working"""
+    return {"status": "ok", "message": "Summarize test endpoint is working"}

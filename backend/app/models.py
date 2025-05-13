@@ -1,22 +1,23 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
-from sqlalchemy.sql import func
-from app.db import Base
+from sqlalchemy import Column, Integer, String, Text, DateTime, func
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
 
-    email = Column(String, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
     name = Column(String, nullable=True)
     picture = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime, default=func.now())
 
 class Summary(Base):
     __tablename__ = "summaries"
 
     id = Column(Integer, primary_key=True, index=True)
     user_email = Column(String, index=True)
+    title = Column(String, nullable=True)
     original_text = Column(Text)
     summary_text = Column(Text)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    url = Column(String, nullable=True)
-    title = Column(String, nullable=True)
+    created_at = Column(DateTime, default=func.now())

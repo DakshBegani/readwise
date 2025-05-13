@@ -77,6 +77,12 @@
   padding: 1.5rem;
   border-radius: 1rem;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.feature-grid-item:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
 }
 
 .feature-item {
@@ -131,6 +137,16 @@
   color: #3182ce;
   margin-top: 10px;
   text-align: center;
+}
+
+.feature-value.time-value {
+  font-size: 1.8rem;
+}
+
+.no-time-message {
+  font-size: 1.2rem;
+  font-style: italic;
+  color: #718096;
 }
 
 .suggestion-box {
